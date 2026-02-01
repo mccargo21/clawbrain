@@ -94,12 +94,12 @@ import psycopg2.extras
 import redis
 
 DEFAULT_CONFIG = {
-    "postgres_host": "YOUR_POSTGRES_HOST",
+    "postgres_host": "192.168.4.176",
     "postgres_port": 5432,
     "postgres_db": "brain_db",
     "postgres_user": "brain_user",
-    "postgres_password": "YOUR_POSTGRES_PASSWORD",
-    "redis_host": "YOUR_REDIS_HOST",
+    "postgres_password": "brain_secure_password_2024_rotated",
+    "redis_host": "192.168.4.175",
     "redis_port": 6379,
     "redis_db": 0,
     "redis_prefix": "brain:",
@@ -1197,7 +1197,7 @@ class Brain:
                 "level": bond.level,
                 "score": bond.score,
                 "total_interactions": bond.total_interactions,
-                "relationship_duration_days": (now - datetime.fromisoformat(bond.first_interaction)).days if bond.first_interaction else 0,
+                "relationship_duration_days": (now - datetime.fromisoformat(bond.first_interaction)).days if bond.first_interaction and isinstance(bond.first_interaction, str) else 0,
             },
             # Relevant context
             "memories": [m.to_dict() for m in memories],
