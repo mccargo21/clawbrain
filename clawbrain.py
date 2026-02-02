@@ -60,6 +60,7 @@ class Memory:
     content_encrypted: bool
     summary: str
     keywords: List[str]
+    tags: List[str]
     importance: int
     linked_to: str
     source: str
@@ -179,7 +180,7 @@ class Brain:
                 summary TEXT, keywords TEXT, embedding TEXT, created_at TEXT, updated_at TEXT)""",
             """CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY, agent_id TEXT, memory_type TEXT, key TEXT, content TEXT,
-                content_encrypted INTEGER, summary TEXT, keywords TEXT, importance INTEGER,
+                content_encrypted INTEGER, summary TEXT, keywords TEXT, tags TEXT, importance INTEGER,
                 linked_to TEXT, source TEXT, embedding TEXT, created_at TEXT, updated_at TEXT)""",
             """CREATE TABLE IF NOT EXISTS todos (
                 id TEXT PRIMARY KEY, agent_id TEXT, title TEXT, description TEXT,
@@ -248,43 +249,44 @@ class Brain:
         return self._storage
     
     # ========== MEMORIES ==========
-    def remember(self, agent_id: str, memory_type: str, content: str, key: str = None, **kwargs) -> Memory:
+    def remember(self, agent_id: str, memory_type: str, content: str, key: str = None, tags: List[str] = None, **kwargs) -> Memory:
         now = datetime.now().isoformat()
         memory_id = str(hashlib.md5(f"{agent_id}:{memory_type}:{content[:100]}".encode()).hexdigest())
         keywords = self._extract_keywords([{"content": content}])
         embedding = None
         if self._embedder and self._embedder.model and memory_type != "secret":
             embedding = self._embedder.embed(content)
-        
+
         memory = Memory(
             id=memory_id, agent_id=agent_id, memory_type=memory_type,
             key=key or f"{memory_type}:{content[:50]}",
             content=content, content_encrypted=False,
             summary=self._summarize([{"content": content}]),
-            keywords=keywords, importance=kwargs.get("importance", 5),
+            keywords=keywords, tags=tags or [],
+            importance=kwargs.get("importance", 5),
             linked_to=kwargs.get("linked_to"), source=kwargs.get("source"),
             embedding=embedding, created_at=now, updated_at=now
         )
-        
+
         with self._get_cursor() as cursor:
             if self._storage == "sqlite":
-                cursor.execute("""INSERT OR IGNORE INTO memories 
-                    (id, agent_id, memory_type, key, content, content_encrypted, summary, keywords, 
+                cursor.execute("""INSERT OR IGNORE INTO memories
+                    (id, agent_id, memory_type, key, content, content_encrypted, summary, keywords, tags,
                      importance, linked_to, source, embedding, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (memory.id, memory.agent_id, memory.memory_type, memory.key, memory.content,
                      int(memory.content_encrypted), memory.summary, json.dumps(memory.keywords),
-                     memory.importance, memory.linked_to, memory.source,
+                     json.dumps(memory.tags), memory.importance, memory.linked_to, memory.source,
                      json.dumps(memory.embedding) if memory.embedding else None,
                      memory.created_at, memory.updated_at))
             else:
-                cursor.execute("""INSERT INTO memories 
-                    (id, agent_id, memory_type, key, content, content_encrypted, summary, keywords,
+                cursor.execute("""INSERT INTO memories
+                    (id, agent_id, memory_type, key, content, content_encrypted, summary, keywords, tags,
                      importance, linked_to, source, embedding, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING""",
                     (memory.id, memory.agent_id, memory.memory_type, memory.key, memory.content,
-                     memory.content_encrypted, memory.summary, memory.keywords,
+                     memory.content_encrypted, memory.summary, memory.keywords, memory.tags,
                      memory.importance, memory.linked_to, memory.source,
                      psycopg2.extras.Json(memory.embedding) if memory.embedding else None,
                      memory.created_at, memory.updated_at))
@@ -312,22 +314,154 @@ class Brain:
             
             rows = cursor.fetchall()
         return [self._row_to_memory(row) for row in rows]
-    
+
+    def search_by_tags(self, tags: List[str], agent_id: str = None, memory_type: str = None, limit: int = 20) -> List[Memory]:
+        """
+        Search memories by tags. Returns memories that contain ANY of the specified tags.
+
+        Args:
+            tags: List of tags to search for (OR logic - matches any tag)
+            agent_id: Optional agent filter
+            memory_type: Optional memory type filter
+            limit: Maximum results to return
+
+        Returns:
+            List of Memory objects matching the tags
+        """
+        with self._get_cursor() as cursor:
+            conditions, params = [], []
+
+            # For SQLite, we need to search in JSON string
+            if self._storage == "sqlite":
+                for tag in tags:
+                    conditions.append("tags LIKE ?")
+                    params.append(f'%"{tag}"%')
+                where_clause = " OR ".join(conditions) if conditions else "1=0"
+            else:
+                # PostgreSQL can use JSON operators
+                tag_conditions = []
+                for i, tag in enumerate(tags):
+                    tag_conditions.append(f"tags @> %s")
+                    params.append(json.dumps([tag]))
+                where_clause = " OR ".join(tag_conditions) if tag_conditions else "1=0"
+
+            if agent_id:
+                where_clause += " AND agent_id = " + ("?" if self._storage == "sqlite" else "%s")
+                params.append(agent_id)
+
+            if memory_type:
+                where_clause += " AND memory_type = " + ("?" if self._storage == "sqlite" else "%s")
+                params.append(memory_type)
+
+            if self._storage == "sqlite":
+                cursor.execute(
+                    f"SELECT * FROM memories WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT {limit}",
+                    tuple(params)
+                )
+            else:
+                cursor.execute(
+                    f"SELECT * FROM memories WHERE {where_clause} ORDER BY importance DESC, created_at DESC LIMIT %s",
+                    tuple(params + [limit])
+                )
+
+            rows = cursor.fetchall()
+        return [self._row_to_memory(row) for row in rows]
+
+    def get_all_tags(self, agent_id: str = None) -> List[str]:
+        """
+        Get all unique tags from memories.
+
+        Args:
+            agent_id: Optional agent filter
+
+        Returns:
+            List of unique tag strings
+        """
+        with self._get_cursor() as cursor:
+            if agent_id:
+                if self._storage == "sqlite":
+                    cursor.execute("SELECT tags FROM memories WHERE agent_id = ? AND tags IS NOT NULL", (agent_id,))
+                else:
+                    cursor.execute("SELECT tags FROM memories WHERE agent_id = %s AND tags IS NOT NULL", (agent_id,))
+            else:
+                if self._storage == "sqlite":
+                    cursor.execute("SELECT tags FROM memories WHERE tags IS NOT NULL")
+                else:
+                    cursor.execute("SELECT tags FROM memories WHERE tags IS NOT NULL")
+
+            rows = cursor.fetchall()
+            all_tags = set()
+            for row in rows:
+                tags = row["tags"]
+                if isinstance(tags, str):
+                    tags = json.loads(tags) if tags else []
+                if isinstance(tags, list):
+                    all_tags.update(tags)
+            return sorted(list(all_tags))
+
+    def add_tags_to_memory(self, memory_id: str, tags: List[str]) -> bool:
+        """
+        Add tags to an existing memory.
+
+        Args:
+            memory_id: The memory ID to update
+            tags: List of tags to add
+
+        Returns:
+            True if memory was updated, False if not found
+        """
+        # Get existing memory
+        with self._get_cursor() as cursor:
+            if self._storage == "sqlite":
+                cursor.execute("SELECT * FROM memories WHERE id = ?", (memory_id,))
+            else:
+                cursor.execute("SELECT * FROM memories WHERE id = %s", (memory_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            memory = self._row_to_memory(row)
+
+        # Merge tags
+        existing_tags = set(memory.tags)
+        existing_tags.update(tags)
+        updated_tags = list(existing_tags)
+
+        # Update memory
+        now = datetime.now().isoformat()
+        with self._get_cursor() as cursor:
+            if self._storage == "sqlite":
+                cursor.execute(
+                    "UPDATE memories SET tags = ?, updated_at = ? WHERE id = ?",
+                    (json.dumps(updated_tags), now, memory_id)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE memories SET tags = %s, updated_at = %s WHERE id = %s",
+                    (updated_tags, now, memory_id)
+                )
+        return True
+
     def _row_to_memory(self, row) -> Memory:
         # Handle keywords - can be list (PostgreSQL) or string (SQLite)
         keywords = row["keywords"]
         if isinstance(keywords, str):
             keywords = json.loads(keywords) if keywords else []
-        
+
+        # Handle tags - can be list (PostgreSQL) or string (SQLite)
+        # sqlite3.Row uses index access, dict uses .get()
+        tags = row["tags"] if "tags" in row.keys() else []
+        if isinstance(tags, str):
+            tags = json.loads(tags) if tags else []
+
         # Handle embedding - can be list (PostgreSQL JSON) or string (SQLite)
         embedding = row["embedding"]
         if isinstance(embedding, str):
             embedding = json.loads(embedding) if embedding else None
-        
+
         return Memory(
             id=row["id"], agent_id=row["agent_id"], memory_type=row["memory_type"],
             key=row["key"], content=row["content"], content_encrypted=bool(row["content_encrypted"]),
-            summary=row["summary"], keywords=keywords,
+            summary=row["summary"], keywords=keywords, tags=tags,
             importance=row["importance"], linked_to=row["linked_to"], source=row["source"],
             embedding=embedding,
             created_at=row["created_at"], updated_at=row["updated_at"]
