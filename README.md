@@ -12,6 +12,44 @@ A sophisticated memory and learning system that enables truly personalized AI-hu
 - 📚 **Learning Insights** - Continuously learns from interactions and corrections
 - 🧠 **get_full_context()** - Everything for personalized responses
 
+## Installation
+
+### For ClawdBot / OpenClaw (Recommended)
+
+```bash
+# Clone to your skills directory
+cd ~/.openclaw/skills  # or ~/clawd/skills or ~/.clawdbot/skills
+git clone https://github.com/clawcolab/clawbrain.git
+
+# Run the install script
+cd clawbrain
+chmod +x install.sh
+./install.sh
+```
+
+The install script will:
+- Detect your platform (ClawdBot or OpenClaw)
+- Install the startup hook automatically
+- Check Python dependencies
+- Show you how to configure environment variables
+
+**Configure your agent ID** (add to systemd service):
+```bash
+sudo mkdir -p /etc/systemd/system/clawdbot.service.d  # or openclaw.service.d
+sudo tee /etc/systemd/system/clawdbot.service.d/brain.conf << EOF
+[Service]
+Environment="BRAIN_AGENT_ID=your-agent-name"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart clawdbot  # or openclaw
+```
+
+### For Python Projects
+
+```bash
+pip install git+https://github.com/clawcolab/clawbrain.git
+```
+
 ## Quick Start
 
 ```bash
