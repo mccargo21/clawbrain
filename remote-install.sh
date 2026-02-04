@@ -42,9 +42,12 @@ echo "📁 Installing to: $SKILLS_DIR/clawbrain"
 if [ -d "$SKILLS_DIR/clawbrain" ]; then
     echo "📥 Updating existing installation..."
     cd "$SKILLS_DIR/clawbrain"
+    git fetch --all
+    git checkout feature/openclaw-plugin-integration 2>/dev/null || git checkout main
     git pull
 else
     echo "📥 Cloning clawbrain..."
+    git clone -b feature/openclaw-plugin-integration https://github.com/clawcolab/clawbrain.git "$SKILLS_DIR/clawbrain" 2>/dev/null || \
     git clone https://github.com/clawcolab/clawbrain.git "$SKILLS_DIR/clawbrain"
     cd "$SKILLS_DIR/clawbrain"
 fi
