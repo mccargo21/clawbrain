@@ -1,6 +1,6 @@
 # Changelog
 
-## [3.0.0] - 2026-02-04
+## [0.1.6] - 2026-02-04
 
 ### 🚀 One-Command Install
 
@@ -53,4 +53,4 @@ All configuration is optional. Set environment variables only if needed:
 
 ---
 
-**Full Changelog**: https://github.com/clawcolab/clawbrain/compare/v2.0.0...v3.0.0
+**Full Changelog**: https://github.com/clawcolab/clawbrain/compare/v0.1.5...v0.1.6
