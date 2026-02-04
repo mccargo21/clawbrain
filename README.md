@@ -18,7 +18,7 @@ A sophisticated memory and learning system that enables truly personalized AI-hu
 
 **One-liner install:**
 ```bash
-cd ~/.openclaw/skills 2>/dev/null || cd ~/.clawdbot/skills 2>/dev/null || cd ~/clawd/skills && git clone https://github.com/clawcolab/clawbrain.git && cd clawbrain && ./install.sh
+curl -fsSL https://raw.githubusercontent.com/clawcolab/clawbrain/main/remote-install.sh | bash
 ```
 
 **Or step-by-step:**
@@ -29,7 +29,6 @@ git clone https://github.com/clawcolab/clawbrain.git
 
 # Run the install script
 cd clawbrain
-chmod +x install.sh
 ./install.sh
 ```
 
