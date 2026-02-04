@@ -7,8 +7,28 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
+import fs from 'node:fs';
 
-const SKILLS_DIR = path.join(os.homedir(), 'clawd', 'skills', 'clawbrain');
+// Find clawbrain skill directory - check multiple possible locations
+function findSkillsDir() {
+  const home = os.homedir();
+  const possiblePaths = [
+    path.join(home, 'clawd', 'skills', 'clawbrain'),           // ClawdBot standard
+    path.join(home, '.openclaw', 'skills', 'clawbrain'),       // OpenClaw standard
+    path.join(home, '.clawdbot', 'skills', 'clawbrain'),       // ClawdBot alt
+  ];
+  
+  for (const p of possiblePaths) {
+    if (fs.existsSync(path.join(p, 'scripts', 'brain_bridge.py'))) {
+      return p;
+    }
+  }
+  
+  // Fallback to first option
+  return possiblePaths[0];
+}
+
+const SKILLS_DIR = findSkillsDir();
 const BRIDGE_SCRIPT = path.join(SKILLS_DIR, 'scripts', 'brain_bridge.py');
 
 /**
