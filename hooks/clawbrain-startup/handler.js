@@ -28,8 +28,54 @@ function findSkillsDir() {
   return possiblePaths[0];
 }
 
+// Find the clawd workspace directory (where IDENTITY.md lives)
+function findClawdDir() {
+  const home = os.homedir();
+  const possiblePaths = [
+    path.join(home, 'clawd'),           // Standard location
+    path.join(home, '.openclaw'),       // OpenClaw location
+    path.join(home, '.clawdbot'),       // ClawdBot alt
+  ];
+  
+  for (const p of possiblePaths) {
+    if (fs.existsSync(path.join(p, 'IDENTITY.md'))) {
+      return p;
+    }
+  }
+  return possiblePaths[0];
+}
+
+// Detect agent name from IDENTITY.md or environment
+function detectAgentName() {
+  // First check environment variable
+  if (process.env.BRAIN_AGENT_ID) {
+    return process.env.BRAIN_AGENT_ID;
+  }
+  
+  // Try to parse IDENTITY.md for the agent name
+  const clawdDir = findClawdDir();
+  const identityPath = path.join(clawdDir, 'IDENTITY.md');
+  
+  try {
+    if (fs.existsSync(identityPath)) {
+      const content = fs.readFileSync(identityPath, 'utf-8');
+      // Look for "**Name:** AgentName" pattern
+      const nameMatch = content.match(/\*\*Name:\*\*\s*(\w+)/i);
+      if (nameMatch) {
+        return nameMatch[1].toLowerCase();
+      }
+    }
+  } catch (err) {
+    console.warn('[clawbrain-hook] Could not read IDENTITY.md:', err.message);
+  }
+  
+  // Default fallback
+  return 'main';
+}
+
 const SKILLS_DIR = findSkillsDir();
 const BRIDGE_SCRIPT = path.join(SKILLS_DIR, 'scripts', 'brain_bridge.py');
+const AGENT_ID = detectAgentName();
 
 /**
  * Execute a brain bridge command
@@ -74,9 +120,9 @@ async function runBrainCommand(command, args = {}) {
  * @param {object} event - Gateway startup event
  */
 async function handleGatewayStartup(event) {
-  console.log('[clawbrain-hook] Gateway startup detected, refreshing brain...');
+  console.log(`[clawbrain-hook] Gateway startup detected, refreshing brain for agent "${AGENT_ID}"...`);
   try {
-    const result = await runBrainCommand('refresh_on_startup', { agent_id: 'main' });
+    const result = await runBrainCommand('refresh_on_startup', { agent_id: AGENT_ID });
     if (result.success) {
       console.log('[clawbrain-hook] Brain refreshed:', result.sync?.memories_count || 0, 'memories loaded');
     } else {
@@ -92,13 +138,13 @@ async function handleGatewayStartup(event) {
  * @param {object} event - Command event
  */
 async function handleNewCommand(event) {
-  console.log('[clawbrain-hook] /new command detected, saving session...');
+  console.log(`[clawbrain-hook] /new command detected, saving session for agent "${AGENT_ID}"...`);
   const context = event.context || {};
   const sessionEntry = context.previousSessionEntry || context.sessionEntry || {};
   
   try {
     const result = await runBrainCommand('save_session', {
-      agent_id: 'main',
+      agent_id: AGENT_ID,
       session_summary: sessionEntry.summary || 'Session ended by user',
       session_id: sessionEntry.sessionId || null,
     });
