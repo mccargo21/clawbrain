@@ -1,12 +1,14 @@
 ---
 name: clawbrain
-description: "Claw Brain - Personal AI Memory System for ClawDBot. Provides memory, personality, bonding, and learning capabilities."
-metadata: {"clawdbot":{"emoji":"🧠","requires":{"files":["clawbrain.py"]},"install":[{"id":"git","kind":"git","url":"https://github.com/clawcolab/clawbrain.git","label":"Install Claw Brain (git)"}]}}
+description: "Claw Brain - Personal AI Memory System for OpenClaw/ClawDBot. Provides memory, personality, bonding, and learning capabilities. Auto-refreshes on service restart."
+metadata: {"openclaw":{"emoji":"🧠","category":"memory","provides":{"slot":"memory"},"events":["gateway:startup","agent:bootstrap","command:new"],"requires":{"files":["clawbrain.py"]},"install":[{"id":"git","kind":"git","url":"https://github.com/clawcolab/clawbrain.git","label":"Install Claw Brain (git)"}]}}
 ---
 
 # Claw Brain Skill 🧠
 
-Personal AI Memory System with Soul, Bonding, and Learning for ClawDBot.
+Personal AI Memory System with Soul, Bonding, and Learning for OpenClaw/ClawDBot.
+
+> **Auto-Refresh on Restart**: ClawBrain automatically detects and refreshes memory when the OpenClaw service restarts.
 
 ## Features
 
@@ -15,6 +17,86 @@ Personal AI Memory System with Soul, Bonding, and Learning for ClawDBot.
 - 💭 **Conversation State** - Real-time mood detection and context tracking
 - 📚 **Learning Insights** - Continuously learns from interactions and corrections
 - 🧠 **get_full_context()** - Everything for personalized responses
+- 🔄 **Auto-Refresh** - Automatically refreshes memory on OpenClaw service restart
+- 🔌 **Plugin System** - Full OpenClaw plugin with hooks and tools
+
+---
+
+## OpenClaw Integration (Recommended)
+
+ClawBrain integrates directly with OpenClaw as a memory plugin. On service restart, it automatically:
+1. Detects existing brain instance (SQLite/PostgreSQL)
+2. Loads and indexes recent memories
+3. Injects memory context into agent bootstrap
+4. Provides `brain_recall`, `brain_remember`, `brain_context`, `brain_learn` tools
+
+### Quick Setup for OpenClaw
+
+```bash
+# 1. Clone to OpenClaw plugins directory
+cd ~/.openclaw/plugins
+git clone https://github.com/clawcolab/clawbrain.git
+
+# 2. Enable the plugin in openclaw.json
+openclaw config set plugins.entries.clawbrain.enabled true
+openclaw config set plugins.slots.memory clawbrain
+
+# 3. Enable boot-md hook for auto-refresh
+openclaw hooks enable boot-md
+
+# 4. Restart gateway
+openclaw gateway restart
+```
+
+### OpenClaw Configuration
+
+Add to `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "clawbrain": {
+        "enabled": true,
+        "settings": {
+          "storage_backend": "auto",
+          "sqlite_path": "~/.openclaw/workspace/brain.db",
+          "auto_recall": true,
+          "recall_limit": 5,
+          "agent_id": "assistant",
+          "user_id": "user"
+        }
+      }
+    },
+    "slots": {
+      "memory": "clawbrain"
+    }
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true
+    }
+  }
+}
+```
+
+### OpenClaw Tools
+
+| Tool | Description |
+|------|-------------|
+| `brain_recall` | Search memories with query, type, tags |
+| `brain_remember` | Store new memories with tags |
+| `brain_context` | Get full context for personalization |
+| `brain_learn` | Learn user preferences |
+| `brain_health` | Check brain status |
+
+### OpenClaw Events
+
+| Event | Action |
+|-------|--------|
+| `gateway:startup` | Initialize brain, refresh memories |
+| `agent:bootstrap` | Inject MEMORY.md with context |
+| `command:new` | Save session to memory |
 
 ---
 
@@ -70,7 +152,7 @@ def handle_message(message, channel="telegram"):
     context = app.brain.get_full_context(
         session_key=f"{channel}_{message.chat.id}",
         user_id=str(message.chat.id),
-        agent_id="jarvis",
+        agent_id="assistant",
         message=message.text
     )
     
@@ -79,7 +161,7 @@ def handle_message(message, channel="telegram"):
     
     # Store conversation
     app.brain.remember(
-        agent_id="jarvis",
+        agent_id="assistant",
         memory_type="conversation",
         content=message.text,
         key=f"last_message_{message.chat.id}"
@@ -96,14 +178,14 @@ def handle_message(message, channel="telegram"):
 
 ```bash
 # PostgreSQL (optional - auto-detected)
-export POSTGRES_HOST=192.168.4.176
+export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
-export POSTGRES_DB=clawcolab
-export POSTGRES_USER=postgres
-export POSTGRES_PASSWORD=postgres
+export POSTGRES_DB=brain_db
+export POSTGRES_USER=brain_user
+export POSTGRES_PASSWORD=your_password
 
 # Redis (optional - auto-detected)
-export REDIS_HOST=192.168.4.175
+export REDIS_HOST=localhost
 export REDIS_PORT=6379
 ```
 
@@ -153,7 +235,7 @@ brain = Brain()
 context = brain.get_full_context(
     session_key="telegram_12345",  # Unique session ID
     user_id="username",              # User identifier
-    agent_id="jarvis",             # Bot identifier
+    agent_id="assistant",          # Bot identifier
     message="Hey, how's it going?" # Current message
 )
 ```
@@ -200,7 +282,7 @@ sys.path.insert(0, "ClawBrain")
 
 from clawbrain import Brain
 
-class JarvisBot:
+class AssistantBot:
     def __init__(self):
         self.brain = Brain()
     
@@ -209,7 +291,7 @@ class JarvisBot:
         context = self.brain.get_full_context(
             session_key=f"telegram_{chat_id}",
             user_id=str(chat_id),
-            agent_id="jarvis",
+            agent_id="assistant",
             message=message
         )
         

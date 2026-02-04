@@ -94,12 +94,12 @@ class UserProfile:
 DEFAULT_CONFIG = {
     "storage_backend": "auto",  # "sqlite", "postgresql", "auto"
     "sqlite_path": "./brain_data.db",
-    "postgres_host": "192.168.4.176",
+    "postgres_host": "localhost",
     "postgres_port": 5432,
     "postgres_db": "brain_db",
     "postgres_user": "brain_user",
-    "postgres_password": "brain_secure_password_2024_rotated",
-    "redis_host": "192.168.4.175",
+    "postgres_password": "",
+    "redis_host": "localhost",
     "redis_port": 6379,
     "redis_db": 0,
     "redis_prefix": "brain:",
@@ -703,7 +703,7 @@ class Brain:
         )
     
     # ========== CONVERSATIONS ==========
-    def remember_conversation(self, session_key: str, messages: List[Dict], agent_id: str = "jarvis", summary: str = None) -> str:
+    def remember_conversation(self, session_key: str, messages: List[Dict], agent_id: str = "assistant", summary: str = None) -> str:
         now = datetime.now().isoformat()
         conv_id = str(hashlib.md5(f"{session_key}:{now}".encode()).hexdigest())
         keywords = self._extract_keywords(messages)
@@ -873,7 +873,7 @@ class Brain:
         return "statement"
     
     # ========== FULL CONTEXT ==========
-    def get_full_context(self, session_key: str, user_id: str = "default", agent_id: str = "moltbot", message: str = None) -> Dict[str, Any]:
+    def get_full_context(self, session_key: str, user_id: str = "default", agent_id: str = "assistant", message: str = None) -> Dict[str, Any]:
         now = datetime.now()
         message_analysis = {}
         if message:
@@ -910,10 +910,10 @@ class Brain:
             },
         }
     
-    def process_message(self, message: str, session_key: str, user_id: str = "default", agent_id: str = "moltbot") -> Dict[str, Any]:
+    def process_message(self, message: str, session_key: str, user_id: str = "default", agent_id: str = "assistant") -> Dict[str, Any]:
         return self.get_full_context(session_key, user_id, agent_id, message)
     
-    def generate_personality_prompt(self, agent_id: str = "moltbot", user_id: str = "default") -> str:
+    def generate_personality_prompt(self, agent_id: str = "assistant", user_id: str = "default") -> str:
         profile = self.get_user_profile(user_id)
         prompt = f"You are {agent_id}, a personal AI assistant who is helpful and friendly."
         if profile.preferred_name:

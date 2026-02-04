@@ -24,8 +24,8 @@ from clawbrain import Brain
 brain = Brain()
 context = brain.get_full_context(
     session_key="chat_123",
-    user_id="pranab",
-    agent_id="jarvis",
+    user_id="user",
+    agent_id="assistant",
     message="Hey, how's it going?"
 )
 ```
@@ -71,13 +71,13 @@ pip install psycopg2-binary redis
 
 **Environment variables (optional):**
 ```bash
-export POSTGRES_HOST=192.168.4.176
+export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
-export POSTGRES_DB=clawcolab
-export POSTGRES_USER=postgres
-export POSTGRES_PASSWORD=postgres
+export POSTGRES_DB=brain_db
+export POSTGRES_USER=brain_user
+export POSTGRES_PASSWORD=your_password
 
-export REDIS_HOST=192.168.4.175
+export REDIS_HOST=localhost
 export REDIS_PORT=6379
 ```
 
@@ -165,7 +165,7 @@ from clawbrain import Memory, UserProfile
 # Memory
 memory = Memory(
     id="...",
-    agent_id="jarvis",
+    agent_id="assistant",
     memory_type="fact",
     key="job",
     content="User works at Walmart",
@@ -174,8 +174,8 @@ memory = Memory(
 
 # User Profile
 profile = UserProfile(
-    user_id="pranab",
-    name="Pranab",
+    user_id="user",
+    name="Alex",
     interests=["AI", "crypto"],
     communication_preferences={"style": "casual"}
 )

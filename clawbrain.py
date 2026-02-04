@@ -94,12 +94,12 @@ class UserProfile:
 DEFAULT_CONFIG = {
     "storage_backend": "auto",  # "sqlite", "postgresql", "auto"
     "sqlite_path": "./brain_data.db",
-    "postgres_host": "192.168.4.176",
+    "postgres_host": "localhost",
     "postgres_port": 5432,
     "postgres_db": "brain_db",
     "postgres_user": "brain_user",
-    "postgres_password": "brain_secure_password_2024_rotated",
-    "redis_host": "192.168.4.175",
+    "postgres_password": "",
+    "redis_host": "localhost",
     "redis_port": 6379,
     "redis_db": 0,
     "redis_prefix": "brain:",
@@ -703,7 +703,7 @@ class Brain:
         )
     
     # ========== CONVERSATIONS ==========
-    def remember_conversation(self, session_key: str, messages: List[Dict], agent_id: str = "jarvis", summary: str = None) -> str:
+    def remember_conversation(self, session_key: str, messages: List[Dict], agent_id: str = "assistant", summary: str = None) -> str:
         now = datetime.now().isoformat()
         conv_id = str(hashlib.md5(f"{session_key}:{now}".encode()).hexdigest())
         keywords = self._extract_keywords(messages)
@@ -873,7 +873,7 @@ class Brain:
         return "statement"
     
     # ========== FULL CONTEXT ==========
-    def get_full_context(self, session_key: str, user_id: str = "default", agent_id: str = "moltbot", message: str = None) -> Dict[str, Any]:
+    def get_full_context(self, session_key: str, user_id: str = "default", agent_id: str = "assistant", message: str = None) -> Dict[str, Any]:
         now = datetime.now()
         message_analysis = {}
         if message:
@@ -910,10 +910,10 @@ class Brain:
             },
         }
     
-    def process_message(self, message: str, session_key: str, user_id: str = "default", agent_id: str = "moltbot") -> Dict[str, Any]:
+    def process_message(self, message: str, session_key: str, user_id: str = "default", agent_id: str = "assistant") -> Dict[str, Any]:
         return self.get_full_context(session_key, user_id, agent_id, message)
     
-    def generate_personality_prompt(self, agent_id: str = "moltbot", user_id: str = "default") -> str:
+    def generate_personality_prompt(self, agent_id: str = "assistant", user_id: str = "default") -> str:
         profile = self.get_user_profile(user_id)
         prompt = f"You are {agent_id}, a personal AI assistant who is helpful and friendly."
         if profile.preferred_name:
@@ -958,6 +958,204 @@ class Brain:
         return {"storage": self._storage in ["sqlite", "postgresql"], "sqlite": self._storage == "sqlite",
                 "postgres": self._storage == "postgresql", "redis": self._redis is not None,
                 "backup_dir": self._backup_dir.exists()}
+    
+    # ========== SYNC/REFRESH METHODS (OpenClaw Integration) ==========
+    def sync_memories(self, agent_id: str = "openclaw", since_hours: int = 24) -> Dict[str, Any]:
+        """
+        Sync and return recent memories for OpenClaw integration.
+        Called on gateway startup to refresh memory context.
+        
+        Args:
+            agent_id: Agent identifier
+            since_hours: Only sync memories from the last N hours
+            
+        Returns:
+            Dict with sync results including memories count and last sync time
+        """
+        from datetime import timedelta
+        cutoff = (datetime.now() - timedelta(hours=since_hours)).isoformat()
+        
+        with self._get_cursor() as cursor:
+            if self._storage == "sqlite":
+                cursor.execute(
+                    "SELECT COUNT(*) as count FROM memories WHERE agent_id = ? AND created_at > ?",
+                    (agent_id, cutoff)
+                )
+            else:
+                cursor.execute(
+                    "SELECT COUNT(*) as count FROM memories WHERE agent_id = %s AND created_at > %s",
+                    (agent_id, cutoff)
+                )
+            row = cursor.fetchone()
+            recent_count = row["count"] if row else 0
+        
+        # Get all memories count
+        memories = self.recall(agent_id=agent_id, limit=100)
+        
+        return {
+            "memories_count": len(memories),
+            "recent_memories": recent_count,
+            "since_hours": since_hours,
+            "storage_backend": self._storage,
+            "last_sync": datetime.now().isoformat(),
+        }
+    
+    def refresh_on_startup(self, agent_id: str = "openclaw", user_id: str = "default") -> Dict[str, Any]:
+        """
+        Refresh brain state on OpenClaw service startup.
+        This is the main method called by the OpenClaw plugin on gateway:startup.
+        
+        Args:
+            agent_id: Agent identifier
+            user_id: User identifier
+            
+        Returns:
+            Dict with full context and sync status
+        """
+        # Health check first
+        health = self.health_check()
+        if not health.get("storage"):
+            return {
+                "success": False,
+                "error": "Storage backend not available",
+                "health": health,
+            }
+        
+        # Sync memories
+        sync_result = self.sync_memories(agent_id=agent_id)
+        
+        # Get user profile
+        profile = self.get_user_profile(user_id)
+        
+        # Get full context for the agent
+        context = self.get_full_context(
+            session_key=f"{agent_id}_startup",
+            user_id=user_id,
+            agent_id=agent_id,
+            message=""
+        )
+        
+        # Generate personality prompt
+        personality_prompt = self.generate_personality_prompt(
+            agent_id=agent_id,
+            user_id=user_id
+        )
+        
+        return {
+            "success": True,
+            "sync": sync_result,
+            "user_profile": {
+                "name": profile.preferred_name or profile.name,
+                "interests": profile.interests,
+                "expertise": profile.expertise_areas,
+                "total_interactions": profile.total_interactions,
+            },
+            "context": context,
+            "personality_prompt": personality_prompt,
+            "health": health,
+            "refreshed_at": datetime.now().isoformat(),
+        }
+    
+    def save_session_to_memory(
+        self, 
+        session_key: str, 
+        messages: List[Dict[str, str]], 
+        agent_id: str = "openclaw",
+        tags: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Save a session's messages to memory.
+        Called by OpenClaw plugin on command:new event.
+        
+        Args:
+            session_key: Unique session identifier
+            messages: List of message dicts with 'role' and 'content'
+            agent_id: Agent identifier
+            tags: Optional tags for the memory
+            
+        Returns:
+            Dict with save result
+        """
+        if not messages:
+            return {"success": False, "error": "No messages to save"}
+        
+        # Create a summary of the conversation
+        content_parts = []
+        for msg in messages[-20:]:  # Last 20 messages
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")[:500]  # Truncate long messages
+            content_parts.append(f"{role}: {content}")
+        
+        content = "\n".join(content_parts)
+        summary = self._summarize(messages[-5:])  # Summary of last 5
+        
+        # Store as conversation memory
+        memory = self.remember(
+            agent_id=agent_id,
+            memory_type="conversation",
+            content=content,
+            key=f"session_{session_key}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            tags=tags or ["session", "conversation"],
+            auto_tag=True,
+            importance=6,  # Slightly above average importance
+        )
+        
+        # Also save to conversations table
+        conv_id = self.remember_conversation(
+            session_key=session_key,
+            messages=messages,
+            agent_id=agent_id,
+            summary=summary
+        )
+        
+        return {
+            "success": True,
+            "memory_id": memory.id,
+            "conversation_id": conv_id,
+            "messages_saved": len(messages),
+            "saved_at": datetime.now().isoformat(),
+        }
+    
+    def get_startup_context(self, agent_id: str = "openclaw", user_id: str = "default") -> str:
+        """
+        Get a formatted context string for OpenClaw MEMORY.md injection.
+        
+        Args:
+            agent_id: Agent identifier
+            user_id: User identifier
+            
+        Returns:
+            Markdown-formatted context string for MEMORY.md
+        """
+        profile = self.get_user_profile(user_id)
+        memories = self.recall(agent_id=agent_id, limit=5)
+        
+        lines = ["# Memory Context", ""]
+        
+        # User section
+        lines.append("## User Profile")
+        if profile.preferred_name or profile.name:
+            lines.append(f"- **Name**: {profile.preferred_name or profile.name}")
+        if profile.interests:
+            lines.append(f"- **Interests**: {', '.join(profile.interests[:5])}")
+        if profile.expertise_areas:
+            lines.append(f"- **Expertise**: {', '.join(profile.expertise_areas[:5])}")
+        if profile.total_interactions:
+            lines.append(f"- **Interactions**: {profile.total_interactions}")
+        lines.append("")
+        
+        # Recent memories
+        if memories:
+            lines.append("## Recent Memories")
+            for mem in memories:
+                summary = mem.summary or mem.content[:100]
+                lines.append(f"- [{mem.memory_type}] {summary}")
+            lines.append("")
+        
+        # Timestamp
+        lines.append(f"_Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M')}_")
+        
+        return "\n".join(lines)
     
     def close(self):
         if hasattr(self, '_sqlite_conn') and self._sqlite_conn:
