@@ -16,6 +16,12 @@ A sophisticated memory and learning system that enables truly personalized AI-hu
 
 ### For ClawdBot / OpenClaw (Recommended)
 
+**One-liner install:**
+```bash
+cd ~/.openclaw/skills 2>/dev/null || cd ~/.clawdbot/skills 2>/dev/null || cd ~/clawd/skills && git clone https://github.com/clawcolab/clawbrain.git && cd clawbrain && ./install.sh
+```
+
+**Or step-by-step:**
 ```bash
 # Clone to your skills directory
 cd ~/.openclaw/skills  # or ~/clawd/skills or ~/.clawdbot/skills
